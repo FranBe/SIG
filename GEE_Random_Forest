@@ -1,0 +1,95 @@
+/*********************************************************************************************
+ * 
+ *                                    CLASIFICACIÓN CON RANDOM FOREST 
+ *
+ *  
+ * Autor: franb2289
+ * Link: https://code.earthengine.google.com/?scriptPath=users%2Ffranb2289%2FGeneral%3Asupervisada
+ *  
+ *
+ * 
+ *********************************************************************************************/
+
+//Recorte para el área de interés
+var corte = function (image){
+  return image.clip(ROI);
+}
+
+//Colección de Landsat 8 Rlefectancia de superficie
+var l8 = ee.ImageCollection("LANDSAT/LC08/C01/T1_SR")
+                            .filterBounds(ROI)
+                            .filterDate("2021-05-01", "2021-06-30")
+                            .sort("CLOUD_COVER")
+                            .map(corte);
+
+
+//Se declara variable "L8", donde se guarda la imagen:
+var L8 = l8.first();
+
+
+//*****************************Visualizaciones******************************
+var fVis = {
+  bands:['B6','B5','B4'],
+  min: 100.0,
+  max: 4000.0,
+  gamma:1
+};
+
+var cReal = {
+  bands:['B4','B3','B2'],
+  min: 100.0,
+  max: 4000.0,
+  gamma:2
+};
+
+
+//**********************Mapas de referencia*****************************
+
+
+Map.addLayer(L8,fVis, "Falso Color");
+Map.addLayer(L8,cReal, "Color real");
+
+
+//******************Generación de las clases****************************
+
+var muestras = urbano.merge(agua).merge(cultivo).merge(suelo_desnudo).merge(vegetacion);
+
+
+//******************Fase de entrenamiento*******************************
+
+
+var entrenamiento = L8.sampleRegions(muestras, ["clase"], 50 );
+
+
+//******************Fase de clasificación*******************************
+
+var bandas = ["B2", "B3", "B4", "B5", "B6", "B7", "B10", "B11"];
+
+var clasificacion = ee.Classifier.smileRandomForest(30).train(entrenamiento, "clase", bandas);
+
+var resultado = L8.classify(clasificacion);
+
+Map.centerObject(Rosario,11)
+var final = ee.Image(resultado, {min:1, max:5, palette:["grey","blue","yellow", "green","brown"]}, "Random Forest: L8")
+Map.addLayer(resultado, {min:1, max:5, palette:["grey","blue","yellow", "green","brown"]}, "Random Forest: L8");
+
+//***********************************************************************
+//Matriz de confusión
+print("M confusion", clasificacion.confusionMatrix()); 
+//Cálculo de exactitud de matrzi de confusión
+print("exactitud", clasificacion.confusionMatrix().accuracy()); 
+
+
+//***********************************************************************
+
+// Exportar imagen a GeoTIFF.
+Export.image.toDrive({
+  image: final,
+  description: 'Random_Forest',
+  scale: 30,
+  region: ROI,
+  fileFormat: 'GEOTIFF',
+  formatOptions: {
+    cloudOptimized: true
+  }
+});
